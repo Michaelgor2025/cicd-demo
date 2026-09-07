@@ -40,3 +40,17 @@ jobs:
         with:
           name: cicd-demo
           path: ./publish
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cicd-demo
+          path: ./deploy
+
+      - name: Show files
+        run: ls -la ./deploy
