@@ -43,14 +43,35 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
+      # 1. 下载 build Job 生成的 Artifact
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: cicd-demo
           path: ./deploy
 
+      # 2. 查看部署文件
       - name: Show files
-        run: ls -la ./deploy
+        shell: powershell
+        run: |
+          Write-Host "================================="
+          Write-Host "Windows Server Deployment"
+          Write-Host "================================="
+
+          Write-Host "Computer Name:"
+          Write-Host $env:COMPUTERNAME
+
+          Write-Host ""
+          Write-Host "Current User:"
+          Write-Host $env:USERNAME
+
+          Write-Host ""
+          Write-Host "Current Directory:"
+          Get-Location
+
+          Write-Host ""
+          Write-Host "Artifact Files:"
+          Get-ChildItem -Path .\deploy -Recurse
