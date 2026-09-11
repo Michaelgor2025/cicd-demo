@@ -24,7 +24,7 @@ app.MapGet("/weatherforecast", () =>
     //    ))
     //    .ToArray();
     //return forecast;
-    return "Hello from CI/CD - Version 3";
+    return "Hello from CI/CD - Version 4";
 });
 
 app.Run();

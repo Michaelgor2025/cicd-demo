@@ -96,27 +96,41 @@ jobs:
         shell: powershell
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
-          $target = "C:\Deploy\cicd-demo"
+
+          $basePath = "C:\Deploy\cicd-demo"
+          $releasesPath = Join-Path $basePath "releases"
+
+          # 使用 GitHub Actions 的 Run Number 作为版本号
+          $releaseId = "${{ github.run_number }}"
+
+          $releasePath = Join-Path $releasesPath $releaseId
 
           Write-Host "Source: $source"
-          Write-Host "Target: $target"
+          Write-Host "Release: $releasePath"
 
-          if (Test-Path $target) {
-              Remove-Item "$target\*" -Recurse -Force
-          }
-
+          # 创建 Release 目录
           New-Item `
             -ItemType Directory `
-            -Path $target `
+            -Path $releasePath `
             -Force | Out-Null
 
+          # 将 Artifact 完整复制到新的 Release
           Copy-Item `
             -Path "$source\*" `
-            -Destination $target `
+            -Destination $releasePath `
             -Recurse `
             -Force
 
-          Write-Host "Files deployed."
+          Write-Host "Release files copied."
+
+          # 简单验证关键文件
+          $webConfig = Join-Path $releasePath "web.config"
+
+          if (-not (Test-Path $webConfig)) {
+              throw "web.config not found in release: $releasePath"
+          }
+
+          Write-Host "Release validation passed."
 
       - name: Start IIS AppPool
         shell: powershell
