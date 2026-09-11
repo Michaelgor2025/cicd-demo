@@ -57,9 +57,40 @@ jobs:
         run: |
           Import-Module WebAdministration
 
-          Stop-WebAppPool -Name "cicd-demo"
+          $appPoolName = "cicd-demo"
 
-          Write-Host "IIS AppPool stopped."
+          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+          Write-Host "Current AppPool state: $state"
+
+          if ($state -eq "Started") {
+              Stop-WebAppPool -Name $appPoolName
+
+              Write-Host "Stopping AppPool..."
+
+              # 等待最多 30 秒
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+                  Write-Host "Current AppPool state: $state"
+
+              } while ($state -ne "Stopped" -and $elapsed -lt $timeout)
+
+              if ($state -ne "Stopped") {
+                  throw "AppPool failed to stop within $timeout seconds."
+              }
+          }
+          else {
+              Write-Host "AppPool is already stopped. Continue deployment."
+          }
+
+          Write-Host "AppPool is ready for deployment."
 
       - name: Deploy Files
         shell: powershell
@@ -92,9 +123,36 @@ jobs:
         run: |
           Import-Module WebAdministration
 
-          Start-WebAppPool -Name "cicd-demo"
+          $appPoolName = "cicd-demo"
 
-          Write-Host "IIS AppPool started."
+          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+          Write-Host "Current AppPool state: $state"
+
+          if ($state -ne "Started") {
+              Start-WebAppPool -Name $appPoolName
+
+              Write-Host "Starting AppPool..."
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+                  Write-Host "Current AppPool state: $state"
+
+              } while ($state -ne "Started" -and $elapsed -lt $timeout)
+
+              if ($state -ne "Started") {
+                  throw "AppPool failed to start within $timeout seconds."
+              }
+          }
+
+          Write-Host "AppPool is running."
 
       - name: Verify IIS AppPool
         shell: powershell
