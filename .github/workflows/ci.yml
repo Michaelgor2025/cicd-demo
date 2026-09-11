@@ -46,12 +46,20 @@ jobs:
     runs-on: self-hosted
 
     steps:
+
+      # ========================================
+      # 1. 下载 CI 阶段生成的 Artifact
+      # ========================================
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: cicd-demo
           path: ./deploy
 
+
+      # ========================================
+      # 2. 停止 IIS AppPool
+      # ========================================
       - name: Stop IIS AppPool
         shell: powershell
         run: |
@@ -64,11 +72,11 @@ jobs:
           Write-Host "Current AppPool state: $state"
 
           if ($state -eq "Started") {
+
               Stop-WebAppPool -Name $appPoolName
 
               Write-Host "Stopping AppPool..."
 
-              # 等待最多 30 秒
               $timeout = 30
               $elapsed = 0
 
@@ -92,6 +100,10 @@ jobs:
 
           Write-Host "AppPool is ready for deployment."
 
+
+      # ========================================
+      # 3. 创建新的 Release
+      # ========================================
       - name: Deploy Files
         shell: powershell
         run: |
@@ -100,9 +112,7 @@ jobs:
           $basePath = "C:\Deploy\cicd-demo"
           $releasesPath = Join-Path $basePath "releases"
 
-          # 使用 GitHub Actions 的 Run Number 作为版本号
           $releaseId = "${{ github.run_number }}"
-
           $releasePath = Join-Path $releasesPath $releaseId
 
           Write-Host "Source: $source"
@@ -114,7 +124,7 @@ jobs:
             -Path $releasePath `
             -Force | Out-Null
 
-          # 将 Artifact 完整复制到新的 Release
+          # 复制 Artifact
           Copy-Item `
             -Path "$source\*" `
             -Destination $releasePath `
@@ -123,15 +133,69 @@ jobs:
 
           Write-Host "Release files copied."
 
-          # 简单验证关键文件
+          # 验证关键文件
           $webConfig = Join-Path $releasePath "web.config"
 
           if (-not (Test-Path $webConfig)) {
-              throw "web.config not found in release: $releasePath"
+              throw "web.config not found: $releasePath"
           }
 
           Write-Host "Release validation passed."
 
+
+      # ========================================
+      # 4. IIS 切换到新 Release
+      # ========================================
+      - name: Switch IIS to New Release
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $basePath = "C:\Deploy\cicd-demo"
+
+          $releaseId = "${{ github.run_number }}"
+          $releasePath = Join-Path $basePath "releases\$releaseId"
+
+          $siteName = "cicd-demo"
+
+          # 获取当前 IIS 路径
+          $oldPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          Write-Host "Old IIS path: $oldPath"
+          Write-Host "New IIS path: $releasePath"
+
+          # 保存旧版本路径
+          "OLD_RELEASE_PATH=$oldPath" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Append
+
+          if (-not (Test-Path $releasePath)) {
+              throw "Release directory does not exist: $releasePath"
+          }
+
+          # 修改 IIS physicalPath
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $releasePath
+
+          Write-Host "IIS switched successfully."
+
+          # 验证
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          Write-Host "Current IIS path: $currentPath"
+
+          if ($currentPath -ne $releasePath) {
+              throw "IIS physical path verification failed."
+          }
+
+
+      # ========================================
+      # 5. 启动 IIS AppPool
+      # ========================================
       - name: Start IIS AppPool
         shell: powershell
         run: |
@@ -144,6 +208,7 @@ jobs:
           Write-Host "Current AppPool state: $state"
 
           if ($state -ne "Started") {
+
               Start-WebAppPool -Name $appPoolName
 
               Write-Host "Starting AppPool..."
@@ -168,21 +233,130 @@ jobs:
 
           Write-Host "AppPool is running."
 
+
+      # ========================================
+      # 6. 检查 AppPool
+      # ========================================
       - name: Verify IIS AppPool
         shell: powershell
         run: |
           Import-Module WebAdministration
 
-          $pool = Get-WebAppPoolState -Name "cicd-demo"
+          $state = (Get-WebAppPoolState `
+            -Name "cicd-demo").Value
 
-          Write-Host "AppPool State: $($pool.Value)"
+          Write-Host "AppPool State: $state"
 
-          if ($pool.Value -ne "Started") {
+          if ($state -ne "Started") {
               throw "IIS AppPool failed to start."
           }
 
-          Write-Host "Deployment successful."
 
+      # ========================================
+      # 7. HTTP 健康检查
+      # ========================================
+      - name: Health Check
+        shell: powershell
+        run: |
+          $url = "http://localhost:8080/health"
+
+          Write-Host "Checking: $url"
+
+          $maxAttempts = 10
+          $attempt = 0
+          $success = $false
+
+          while ($attempt -lt $maxAttempts) {
+
+              $attempt++
+
+              try {
+
+                  $response = Invoke-WebRequest `
+                    -Uri $url `
+                    -UseBasicParsing `
+                    -TimeoutSec 5
+
+                  Write-Host "HTTP Status: $($response.StatusCode)"
+
+                  if ($response.StatusCode -eq 200) {
+                      $success = $true
+                      break
+                  }
+
+              }
+              catch {
+
+                  Write-Host "Health check failed:"
+                  Write-Host $_.Exception.Message
+              }
+
+              Write-Host "Waiting for application..."
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $success) {
+              throw "Health check failed after $maxAttempts attempts."
+          }
+
+          Write-Host "Health check passed."
+
+
+      # ========================================
+      # 8. 发布失败 → 回滚 IIS
+      # ========================================
+      - name: Rollback IIS
+        if: failure()
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo"
+          $oldPath = $env:OLD_RELEASE_PATH
+
+          Write-Host "Deployment failed."
+          Write-Host "Rollback target: $oldPath"
+
+          if ([string]::IsNullOrWhiteSpace($oldPath)) {
+              Write-Warning "Old release path is empty. Cannot rollback."
+              exit 0
+          }
+
+          if (-not (Test-Path $oldPath)) {
+              Write-Warning "Old release does not exist: $oldPath"
+              exit 0
+          }
+
+          # 停止 AppPool
+          $state = (Get-WebAppPoolState `
+            -Name $siteName).Value
+
+          if ($state -eq "Started") {
+              Stop-WebAppPool -Name $siteName
+
+              Start-Sleep -Seconds 2
+          }
+
+          # IIS 切回旧版本
+          Write-Host "Switching IIS back to:"
+          Write-Host $oldPath
+
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $oldPath
+
+          # 启动 AppPool
+          Write-Host "Starting AppPool..."
+
+          Start-WebAppPool -Name $siteName
+
+          Write-Host "Rollback completed."
+
+
+      # ========================================
+      # 9. 无论成功失败，最终确保 AppPool Running
+      # ========================================
       - name: Ensure IIS AppPool Running
         if: always()
         shell: powershell
@@ -191,19 +365,25 @@ jobs:
 
           $appPoolName = "cicd-demo"
 
-          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
 
           Write-Host "Final AppPool state: $state"
 
           if ($state -ne "Started") {
+
               Write-Host "AppPool is not running. Attempting to start..."
 
               try {
+
                   Start-WebAppPool -Name $appPoolName
+
               }
               catch {
-                  Write-Warning "Failed to start AppPool: $($_.Exception.Message)"
-                  Write-Warning "The deployment job has already failed. Please check IIS."
+
+                  Write-Warning "Failed to start AppPool:"
+                  Write-Warning $_.Exception.Message
+
                   exit 0
               }
 
@@ -211,20 +391,25 @@ jobs:
               $elapsed = 0
 
               do {
+
                   Start-Sleep -Seconds 1
                   $elapsed++
 
-                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
 
                   Write-Host "Current AppPool state: $state"
 
               } while ($state -ne "Started" -and $elapsed -lt $timeout)
 
               if ($state -ne "Started") {
-                  Write-Warning "AppPool could not be started within $timeout seconds."
+
+                  Write-Warning `
+                    "AppPool could not be started within $timeout seconds."
+
                   exit 0
               }
           }
 
-          Write-Host "Final AppPool state: Started"
+          Write-Host "Final AppPool state: Started."
 

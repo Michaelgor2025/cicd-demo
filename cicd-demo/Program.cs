@@ -1,6 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
@@ -13,6 +14,8 @@ var summaries = new[]
     "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
+app.MapHealthChecks("/health");
+
 app.MapGet("/weatherforecast", () =>
 {
     //var forecast = Enumerable.Range(1, 5).Select(index =>
@@ -24,7 +27,7 @@ app.MapGet("/weatherforecast", () =>
     //    ))
     //    .ToArray();
     //return forecast;
-    return "Hello from CI/CD - Version 4";
+    return "Hello from CI/CD - Version 5";
 });
 
 app.Run();
