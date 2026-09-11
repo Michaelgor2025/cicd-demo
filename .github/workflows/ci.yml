@@ -168,3 +168,49 @@ jobs:
           }
 
           Write-Host "Deployment successful."
+
+      - name: Ensure IIS AppPool Running
+        if: always()
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo"
+
+          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+          Write-Host "Final AppPool state: $state"
+
+          if ($state -ne "Started") {
+              Write-Host "AppPool is not running. Attempting to start..."
+
+              try {
+                  Start-WebAppPool -Name $appPoolName
+              }
+              catch {
+                  Write-Warning "Failed to start AppPool: $($_.Exception.Message)"
+                  Write-Warning "The deployment job has already failed. Please check IIS."
+                  exit 0
+              }
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+                  Write-Host "Current AppPool state: $state"
+
+              } while ($state -ne "Started" -and $elapsed -lt $timeout)
+
+              if ($state -ne "Started") {
+                  Write-Warning "AppPool could not be started within $timeout seconds."
+                  exit 0
+              }
+          }
+
+          Write-Host "Final AppPool state: Started"
+
