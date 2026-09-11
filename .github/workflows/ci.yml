@@ -53,25 +53,46 @@ jobs:
           name: cicd-demo
           path: ./deploy
 
-      # 2. 查看部署文件
-      - name: Show files
+      # 2. 创建部署目录
+      - name: Prepare Deploy Directory
+        shell: powershell
+        run: |
+          $deployPath = "C:\Deploy\cicd-demo"
+
+          Write-Host "Deploy path: $deployPath"
+
+          if (-not (Test-Path $deployPath)) {
+              New-Item -ItemType Directory -Path $deployPath -Force
+              Write-Host "Created deploy directory."
+          }
+          else {
+              Write-Host "Deploy directory already exists."
+          }
+
+      # 3. 复制 Artifact
+      - name: Copy Artifact
+        shell: powershell
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
+          $target = "C:\Deploy\cicd-demo"
+
+          Write-Host "Source: $source"
+          Write-Host "Target: $target"
+
+          Copy-Item `
+            -Path "$source\*" `
+            -Destination $target `
+            -Recurse `
+            -Force
+
+      # 4. 验证部署文件
+      - name: Verify Deployment Files
         shell: powershell
         run: |
           Write-Host "================================="
-          Write-Host "Windows Server Deployment"
+          Write-Host "Deployment Files"
           Write-Host "================================="
 
-          Write-Host "Computer Name:"
-          Write-Host $env:COMPUTERNAME
-
-          Write-Host ""
-          Write-Host "Current User:"
-          Write-Host $env:USERNAME
-
-          Write-Host ""
-          Write-Host "Current Directory:"
-          Get-Location
-
-          Write-Host ""
-          Write-Host "Artifact Files:"
-          Get-ChildItem -Path .\deploy -Recurse
+          Get-ChildItem `
+            -Path "C:\Deploy\cicd-demo" `
+            -Recurse
