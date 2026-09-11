@@ -46,31 +46,22 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. 下载 build Job 生成的 Artifact
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: cicd-demo
           path: ./deploy
 
-      # 2. 创建部署目录
-      - name: Prepare Deploy Directory
+      - name: Stop IIS AppPool
         shell: powershell
         run: |
-          $deployPath = "C:\Deploy\cicd-demo"
+          Import-Module WebAdministration
 
-          Write-Host "Deploy path: $deployPath"
+          Stop-WebAppPool -Name "cicd-demo"
 
-          if (-not (Test-Path $deployPath)) {
-              New-Item -ItemType Directory -Path $deployPath -Force
-              Write-Host "Created deploy directory."
-          }
-          else {
-              Write-Host "Deploy directory already exists."
-          }
+          Write-Host "IIS AppPool stopped."
 
-      # 3. 复制 Artifact
-      - name: Copy Artifact
+      - name: Deploy Files
         shell: powershell
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
@@ -79,20 +70,43 @@ jobs:
           Write-Host "Source: $source"
           Write-Host "Target: $target"
 
+          if (Test-Path $target) {
+              Remove-Item "$target\*" -Recurse -Force
+          }
+
+          New-Item `
+            -ItemType Directory `
+            -Path $target `
+            -Force | Out-Null
+
           Copy-Item `
             -Path "$source\*" `
             -Destination $target `
             -Recurse `
             -Force
 
-      # 4. 验证部署文件
-      - name: Verify Deployment Files
+          Write-Host "Files deployed."
+
+      - name: Start IIS AppPool
         shell: powershell
         run: |
-          Write-Host "================================="
-          Write-Host "Deployment Files"
-          Write-Host "================================="
+          Import-Module WebAdministration
 
-          Get-ChildItem `
-            -Path "C:\Deploy\cicd-demo" `
-            -Recurse
+          Start-WebAppPool -Name "cicd-demo"
+
+          Write-Host "IIS AppPool started."
+
+      - name: Verify IIS AppPool
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $pool = Get-WebAppPoolState -Name "cicd-demo"
+
+          Write-Host "AppPool State: $($pool.Value)"
+
+          if ($pool.Value -ne "Started") {
+              throw "IIS AppPool failed to start."
+          }
+
+          Write-Host "Deployment successful."
