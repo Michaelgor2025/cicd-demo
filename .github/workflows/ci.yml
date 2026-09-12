@@ -511,3 +511,34 @@ jobs:
 
           Write-Host ""
           Write-Host "Release cleanup completed."
+
+      # ========================================
+      # 11. 输出部署结果
+      # ========================================
+      - name: Deployment Summary
+        shell: powershell
+        run: |
+          $releaseId = "${{ github.run_number }}"
+          $releasePath = "C:\Deploy\cicd-demo\releases\$releaseId"
+
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo"
+
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          $appPoolState = (Get-WebAppPoolState `
+            -Name $siteName).Value
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "        Deployment Summary"
+          Write-Host "========================================"
+          Write-Host "Application : cicd-demo"
+          Write-Host "Release     : $releaseId"
+          Write-Host "IIS Path    : $currentPath"
+          Write-Host "AppPool     : $appPoolState"
+          Write-Host "Health      : Passed"
+          Write-Host "========================================"
+          Write-Host ""
