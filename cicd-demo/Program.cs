@@ -14,9 +14,9 @@ var summaries = new[]
     "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
-app.MapHealthChecks("/health");
+//app.MapHealthChecks("/health");
 
-app.MapGet("/weatherforecast", () =>
+app.MapGet("/health", () =>
 {
     //var forecast = Enumerable.Range(1, 5).Select(index =>
     //    new WeatherForecast
@@ -27,7 +27,8 @@ app.MapGet("/weatherforecast", () =>
     //    ))
     //    .ToArray();
     //return forecast;
-    return "Hello from CI/CD - Version 5";
+    //return "Hello from CI/CD - Version 5";
+    return Results.StatusCode(500);
 });
 
 app.Run();
