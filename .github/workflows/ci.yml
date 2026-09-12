@@ -413,3 +413,101 @@ jobs:
 
           Write-Host "Final AppPool state: Started."
 
+      # ========================================
+      # 10. 清理旧 Release
+      # ========================================
+      - name: Cleanup Old Releases
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $basePath = "C:\Deploy\cicd-demo"
+          $releasesPath = Join-Path $basePath "releases"
+
+          $siteName = "cicd-demo"
+          $keepCount = 3
+
+          Write-Host "Release directory: $releasesPath"
+          Write-Host "Keep latest $keepCount releases."
+
+          if (-not (Test-Path $releasesPath)) {
+              Write-Host "Release directory does not exist."
+              exit 0
+          }
+
+          # ----------------------------------------
+          # 获取 IIS 当前正在使用的目录
+          # ----------------------------------------
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          Write-Host "Current IIS path: $currentPath"
+
+          # ----------------------------------------
+          # 获取所有 Release
+          # ----------------------------------------
+          $releases = Get-ChildItem `
+            -Path $releasesPath `
+            -Directory |
+            Sort-Object {
+                [int64]$_.Name
+            } -Descending
+
+          Write-Host ""
+          Write-Host "All releases:"
+
+          $releases | ForEach-Object {
+              Write-Host "  $($_.Name)"
+          }
+
+          # ----------------------------------------
+          # 最新 N 个版本
+          # ----------------------------------------
+          $releasesToKeep = @(
+              $releases | Select-Object -First $keepCount
+          )
+
+          # ----------------------------------------
+          # 当前 IIS 使用的 Release
+          # ----------------------------------------
+          foreach ($release in $releases) {
+
+              if ($currentPath.TrimEnd('\') -eq `
+                  $release.FullName.TrimEnd('\')) {
+
+                  if ($releasesToKeep.FullName -notcontains $release.FullName) {
+
+                      Write-Host "Keeping current IIS release: $($release.Name)"
+
+                      $releasesToKeep += $release
+                  }
+              }
+          }
+
+          Write-Host ""
+          Write-Host "Releases to keep:"
+
+          $releasesToKeep | ForEach-Object {
+              Write-Host "  $($_.Name)"
+          }
+
+          # ----------------------------------------
+          # 删除其他 Release
+          # ----------------------------------------
+          foreach ($release in $releases) {
+
+              if ($releasesToKeep.FullName -contains $release.FullName) {
+                  continue
+              }
+
+              Write-Host ""
+              Write-Host "Deleting old release: $($release.FullName)"
+
+              Remove-Item `
+                -Path $release.FullName `
+                -Recurse `
+                -Force
+          }
+
+          Write-Host ""
+          Write-Host "Release cleanup completed."

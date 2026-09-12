@@ -27,7 +27,7 @@ app.MapGet("/health", () =>
     //    ))
     //    .ToArray();
     //return forecast;
-    return "Hello from CI/CD - Version 5";
+    return "Hello from CI/CD - Version 6";
 });
 
 app.Run();
