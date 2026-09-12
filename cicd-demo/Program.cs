@@ -14,7 +14,7 @@ var summaries = new[]
     "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
-//app.MapHealthChecks("/health");
+app.MapHealthChecks("/health");
 
 app.MapGet("/health", () =>
 {
@@ -27,8 +27,7 @@ app.MapGet("/health", () =>
     //    ))
     //    .ToArray();
     //return forecast;
-    //return "Hello from CI/CD - Version 5";
-    return Results.StatusCode(500);
+    return "Hello from CI/CD - Version 5";
 });
 
 app.Run();
