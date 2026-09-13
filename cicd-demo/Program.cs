@@ -18,9 +18,9 @@ app.MapHealthChecks("/health");
 
 app.MapGet("/health", (HttpContext context) =>
 {
-    var port = context.Connection.LocalPort;
+    //var port = context.Connection.LocalPort;
 
-    return "Hello from CI/CD - Version 6";
+    return "Hello from CI/CD - Version 7";
 });
 
 app.Run();
