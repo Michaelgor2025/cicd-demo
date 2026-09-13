@@ -263,6 +263,220 @@ jobs:
           Write-Host "Health      : Passed"
           Write-Host "========================================"
 
+  deploy-production:
+    needs: deploy-staging
+
+    runs-on: self-hosted
+
+    environment:
+      name: production
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cicd-demo
+          path: ./deploy
+
+      - name: Stop Production AppPool
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo"
+
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
+
+          if ($state -eq "Started") {
+
+              Write-Host "Stopping Production AppPool..."
+
+              Stop-WebAppPool `
+                -Name $appPoolName
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
+
+              } while (
+                  $state -ne "Stopped" `
+                  -and $elapsed -lt $timeout
+              )
+
+              if ($state -ne "Stopped") {
+                  throw "Production AppPool did not stop."
+              }
+          }
+          else {
+              Write-Host "Production AppPool already stopped."
+          }
+
+      - name: Deploy Production Files
+        shell: powershell
+        run: |
+          $source = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "deploy"
+
+          $basePath = "C:\Deploy\cicd-demo"
+
+          $releasesPath = Join-Path `
+            $basePath `
+            "releases"
+
+          $releaseId = "${{ github.run_number }}"
+
+          $releasePath = Join-Path `
+            $releasesPath `
+            $releaseId
+
+          Write-Host "Production Release:"
+          Write-Host $releasePath
+
+          New-Item `
+            -ItemType Directory `
+            -Path $releasePath `
+            -Force | Out-Null
+
+          Copy-Item `
+            -Path "$source\*" `
+            -Destination $releasePath `
+            -Recurse `
+            -Force
+
+          $webConfig = Join-Path `
+            $releasePath `
+            "web.config"
+
+          if (-not (Test-Path $webConfig)) {
+              throw "web.config not found."
+          }
+
+          Write-Host "Production release validation passed."
+
+      - name: Switch Production IIS
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo"
+
+          $basePath = "C:\Deploy\cicd-demo"
+
+          $releaseId = "${{ github.run_number }}"
+
+          $releasePath = Join-Path `
+            $basePath `
+            "releases\$releaseId"
+
+          $oldPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          Write-Host "Old Production Path:"
+          Write-Host $oldPath
+
+          Write-Host "New Production Path:"
+          Write-Host $releasePath
+
+          "OLD_PRODUCTION_RELEASE_PATH=$oldPath" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Append
+
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $releasePath
+
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          if ($currentPath -ne $releasePath) {
+              throw "Production IIS switch failed."
+          }
+
+          Write-Host "Production IIS switched successfully."
+
+      - name: Start Production AppPool
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo"
+
+          Start-WebAppPool `
+            -Name $appPoolName
+
+          $timeout = 30
+          $elapsed = 0
+
+          do {
+              Start-Sleep -Seconds 1
+              $elapsed++
+
+              $state = (Get-WebAppPoolState `
+                -Name $appPoolName).Value
+
+          } while (
+              $state -ne "Started" `
+              -and $elapsed -lt $timeout
+          )
+
+          if ($state -ne "Started") {
+              throw "Production AppPool did not start."
+          }
+
+          Write-Host "Production AppPool started."
+
+      - name: Production Health Check
+        shell: powershell
+        run: |
+          $url = "http://localhost:8080/health"
+
+          $maxAttempts = 10
+          $attempt = 0
+          $success = $false
+
+          while ($attempt -lt $maxAttempts) {
+
+              $attempt++
+
+              Write-Host "Production health check: $attempt"
+
+              try {
+
+                  $response = Invoke-WebRequest `
+                    -Uri $url `
+                    -UseBasicParsing `
+                    -TimeoutSec 5
+
+                  if ($response.StatusCode -eq 200) {
+                      $success = $true
+                      break
+                  }
+
+              }
+              catch {
+
+                  Write-Host $_.Exception.Message
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $success) {
+              throw "Production health check failed."
+          }
+
+          Write-Host "Production health check passed."
+
   deploy:
     needs: build
     runs-on: self-hosted
