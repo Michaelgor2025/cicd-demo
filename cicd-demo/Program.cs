@@ -20,12 +20,7 @@ app.MapGet("/health", (HttpContext context) =>
 {
     var port = context.Connection.LocalPort;
 
-    if (port == 8080)
-    {
-        return Results.StatusCode(500);
-    }
-
-    return Results.Ok();
+    return "Hello from CI/CD - Version 6";
 });
 
 app.Run();
