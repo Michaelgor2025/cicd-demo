@@ -96,7 +96,7 @@ jobs:
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
 
-          $basePath = "C:\Deploy\cicd-demo-staging"
+          $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
           $releasesPath = Join-Path $basePath "releases"
 
           $releaseId = "${{ github.run_number }}"
@@ -133,7 +133,7 @@ jobs:
 
           $siteName = "cicd-demo-staging"
 
-          $basePath = "C:\Deploy\cicd-demo-staging"
+          $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
           $releaseId = "${{ github.run_number }}"
 
           $releasePath = Join-Path `
@@ -200,7 +200,7 @@ jobs:
       - name: Staging Health Check
         shell: powershell
         run: |
-          $url = "http://localhost:8081/health"
+          $url = "${{ vars.STAGING_HEALTH_URL }}"
 
           $maxAttempts = 10
           $attempt = 0
@@ -246,7 +246,7 @@ jobs:
           $releaseId = "${{ github.run_number }}"
 
           $currentPath = (Get-ItemProperty `
-            "IIS:\Sites\$siteName").physicalPath
+            "IIS:\Sites\$siteName").physicalPathd
 
           $appPoolState = (Get-WebAppPoolState `
             -Name $siteName).Value
@@ -327,7 +327,7 @@ jobs:
             $env:GITHUB_WORKSPACE `
             "deploy"
 
-          $basePath = "C:\Deploy\cicd-demo"
+          $basePath = "${{ vars.PRODUCTION_DEPLOY_PATH }}"
 
           $releasesPath = Join-Path `
             $basePath `
@@ -370,7 +370,7 @@ jobs:
 
           $siteName = "cicd-demo"
 
-          $basePath = "C:\Deploy\cicd-demo"
+          $basePath = "${{ vars.PRODUCTION_DEPLOY_PATH }}"
 
           $releaseId = "${{ github.run_number }}"
 
@@ -440,7 +440,7 @@ jobs:
       - name: Production Health Check
         shell: powershell
         run: |
-          $url = "http://localhost:8080/health"
+          $url = "${{ vars.PRODUCTION_HEALTH_URL }}"
 
           $maxAttempts = 10
           $attempt = 0
@@ -616,3 +616,13 @@ jobs:
 
           Write-Host "Production AppPool is running."
 
+  test-secret:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Secret
+        run: |
+          echo "Secret exists"
+          echo "Secret length: ${#TEST_SECRET}"
+        env:
+          TEST_SECRET: ${{ secrets.TEST_SECRET }}
