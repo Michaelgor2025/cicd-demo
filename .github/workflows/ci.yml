@@ -477,6 +477,143 @@ jobs:
 
           Write-Host "Production health check passed."
 
+      - name: Rollback Production
+        if: failure()
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo"
+          $oldPath = $env:OLD_PRODUCTION_RELEASE_PATH
+
+          Write-Host "========================================"
+          Write-Host "       Production Rollback"
+          Write-Host "========================================"
+
+          if ([string]::IsNullOrWhiteSpace($oldPath)) {
+              Write-Warning "Old production path is empty."
+              Write-Warning "Cannot rollback."
+              exit 0
+          }
+
+          Write-Host "Rollback target:"
+          Write-Host $oldPath
+
+          if (-not (Test-Path $oldPath)) {
+              Write-Warning "Old release does not exist:"
+              Write-Warning $oldPath
+              exit 0
+          }
+
+          # 获取当前 AppPool 状态
+          $state = (Get-WebAppPoolState `
+            -Name $siteName).Value
+
+          # 停止 AppPool
+          if ($state -eq "Started") {
+
+              Write-Host "Stopping Production AppPool..."
+
+              Stop-WebAppPool `
+                -Name $siteName
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState `
+                    -Name $siteName).Value
+
+              } while (
+                  $state -ne "Stopped" `
+                  -and $elapsed -lt $timeout
+              )
+
+              if ($state -ne "Stopped") {
+                  Write-Warning "AppPool did not stop."
+                  exit 0
+              }
+          }
+
+          # 切回旧 Release
+          Write-Host "Switching IIS back to:"
+          Write-Host $oldPath
+
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $oldPath
+
+          # 验证 IIS 路径
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          if ($currentPath -ne $oldPath) {
+              Write-Warning "IIS rollback path verification failed."
+              exit 0
+          }
+
+          # 启动 AppPool
+          Start-WebAppPool `
+            -Name $siteName
+
+          Write-Host "Production rollback completed."
+
+      - name: Ensure Production AppPool Running
+        if: always()
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo"
+
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
+
+          Write-Host "Current Production AppPool state: $state"
+
+          if ($state -ne "Started") {
+
+              Write-Host "Attempting to start Production AppPool..."
+
+              try {
+                  Start-WebAppPool `
+                    -Name $appPoolName
+              }
+              catch {
+                  Write-Warning "Failed to start AppPool:"
+                  Write-Warning $_.Exception.Message
+
+                  # 不覆盖原始部署失败
+                  exit 0
+              }
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
+
+              } while (
+                  $state -ne "Started" `
+                  -and $elapsed -lt $timeout
+              )
+
+              if ($state -ne "Started") {
+                  Write-Warning "AppPool could not be started."
+                  exit 0
+              }
+          }
+
+          Write-Host "Production AppPool is running."
+
   deploy:
     needs: build
     runs-on: self-hosted
