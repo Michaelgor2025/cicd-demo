@@ -11,7 +11,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -40,6 +39,229 @@ jobs:
         with:
           name: cicd-demo
           path: ./publish
+
+  deploy-staging:
+    needs: build
+
+    # 只有 push 到 main 才部署 Staging
+    # PR 只做 CI，不部署服务器
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    runs-on: self-hosted
+
+    steps:
+      # 1. 下载 build job 产生的 Artifact
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cicd-demo
+          path: ./deploy
+
+      # 2. 停止 Staging AppPool
+      - name: Stop Staging AppPool
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo-staging"
+
+          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+
+          if ($state -eq "Started") {
+              Write-Host "Stopping AppPool: $appPoolName"
+
+              Stop-WebAppPool -Name $appPoolName
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
+              } while ($state -ne "Stopped" -and $elapsed -lt $timeout)
+
+              if ($state -ne "Stopped") {
+                  throw "AppPool did not stop within $timeout seconds."
+              }
+          }
+          else {
+              Write-Host "AppPool is already stopped."
+          }
+
+      # 3. 创建新的 Release
+      - name: Deploy Staging Files
+        shell: powershell
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
+
+          $basePath = "C:\Deploy\cicd-demo-staging"
+          $releasesPath = Join-Path $basePath "releases"
+
+          $releaseId = "${{ github.run_number }}"
+          $releasePath = Join-Path $releasesPath $releaseId
+
+          Write-Host "Source: $source"
+          Write-Host "Release: $releasePath"
+
+          New-Item `
+            -ItemType Directory `
+            -Path $releasePath `
+            -Force | Out-Null
+
+          Copy-Item `
+            -Path "$source\*" `
+            -Destination $releasePath `
+            -Recurse `
+            -Force
+
+          # 验证 web.config
+          $webConfig = Join-Path $releasePath "web.config"
+
+          if (-not (Test-Path $webConfig)) {
+              throw "web.config not found: $releasePath"
+          }
+
+          Write-Host "Staging release validation passed."
+
+      # 4. 修改 Staging IIS Site 指向新的 Release
+      - name: Switch Staging IIS
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo-staging"
+
+          $basePath = "C:\Deploy\cicd-demo-staging"
+          $releaseId = "${{ github.run_number }}"
+
+          $releasePath = Join-Path `
+            $basePath `
+            "releases\$releaseId"
+
+          # 保存旧版本路径
+          $oldPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          Write-Host "Old IIS path: $oldPath"
+          Write-Host "New IIS path: $releasePath"
+
+          "OLD_STAGING_RELEASE_PATH=$oldPath" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Append
+
+          # 切换 IIS
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $releasePath
+
+          # 再读一次验证
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          if ($currentPath -ne $releasePath) {
+              throw "Staging IIS physical path verification failed."
+          }
+
+          Write-Host "Staging IIS switch successful."
+
+      # 5. 启动 Staging AppPool
+      - name: Start Staging AppPool
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "cicd-demo-staging"
+
+          Start-WebAppPool -Name $appPoolName
+
+          $timeout = 30
+          $elapsed = 0
+
+          do {
+              Start-Sleep -Seconds 1
+              $elapsed++
+
+              $state = (Get-WebAppPoolState `
+                -Name $appPoolName).Value
+
+          } while ($state -ne "Started" -and $elapsed -lt $timeout)
+
+          if ($state -ne "Started") {
+              throw "Staging AppPool did not start."
+          }
+
+          Write-Host "Staging AppPool started."
+
+      # 6. Staging 健康检查
+      - name: Staging Health Check
+        shell: powershell
+        run: |
+          $url = "http://localhost:8081/health"
+
+          $maxAttempts = 10
+          $attempt = 0
+          $success = $false
+
+          while ($attempt -lt $maxAttempts) {
+              $attempt++
+
+              Write-Host "Health check attempt: $attempt"
+
+              try {
+                  $response = Invoke-WebRequest `
+                    -Uri $url `
+                    -UseBasicParsing `
+                    -TimeoutSec 5
+
+                  if ($response.StatusCode -eq 200) {
+                      $success = $true
+                      break
+                  }
+              }
+              catch {
+                  Write-Host "Health check failed:"
+                  Write-Host $_.Exception.Message
+              }
+
+              Start-Sleep -Seconds 2
+          }
+
+          if (-not $success) {
+              throw "Staging health check failed."
+          }
+
+          Write-Host "Staging health check passed."
+
+      # 7. 部署结果
+      - name: Staging Deployment Summary
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $siteName = "cicd-demo-staging"
+          $releaseId = "${{ github.run_number }}"
+
+          $currentPath = (Get-ItemProperty `
+            "IIS:\Sites\$siteName").physicalPath
+
+          $appPoolState = (Get-WebAppPoolState `
+            -Name $siteName).Value
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "       Staging Deployment"
+          Write-Host "========================================"
+          Write-Host "Application : cicd-demo"
+          Write-Host "Environment : Staging"
+          Write-Host "Release     : $releaseId"
+          Write-Host "IIS Path    : $currentPath"
+          Write-Host "AppPool     : $appPoolState"
+          Write-Host "Health      : Passed"
+          Write-Host "========================================"
 
   deploy:
     needs: build
