@@ -24,6 +24,18 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Event: ${{ github.event_name }}"
 
+      - name: Intentional Failure
+        run: |
+          echo "This step will fail"
+          exit 1
+
+      - name: Run After Failure
+        run: echo "This should NOT run"
+
+      - name: Run On Failure
+        if: failure()
+        run: echo "Previous step failed, so this runs"
+
       - name: IF - Main Branch
         if: github.ref == 'refs/heads/main'
         run: echo "This is main branch"
