@@ -16,18 +16,16 @@ var summaries = new[]
 
 app.MapHealthChecks("/health");
 
-app.MapGet("/health", () =>
+app.MapGet("/health", (HttpContext context) =>
 {
-    //var forecast = Enumerable.Range(1, 5).Select(index =>
-    //    new WeatherForecast
-    //    (
-    //        DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-    //        Random.Shared.Next(-20, 55),
-    //        summaries[Random.Shared.Next(summaries.Length)]
-    //    ))
-    //    .ToArray();
-    //return forecast;
-    return "Hello from CI/CD - Version 7";
+    var port = context.Connection.LocalPort;
+
+    if (port == 8080)
+    {
+        return Results.StatusCode(500);
+    }
+
+    return Results.Ok();
 });
 
 app.Run();
