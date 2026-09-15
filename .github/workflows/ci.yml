@@ -59,6 +59,31 @@ jobs:
           name: cicd-demo
           path: ./publish
 
+  test-needs-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test
+        run: echo "test job executed"
+
+
+  test-deploy-staging:
+    needs: test-needs-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Staging
+        run: echo "staging job executed"
+
+
+  test-deploy-production:
+    needs: test-deploy-staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Production
+        run: echo "production job executed"
+
   deploy-staging:
     needs: build
 
