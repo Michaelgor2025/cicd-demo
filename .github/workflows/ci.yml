@@ -426,6 +426,10 @@ jobs:
               throw "Production IIS switch failed."
           }
 
+          # 标记：IIS 已经成功切换
+          "PRODUCTION_SWITCHED=true" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
           Write-Host "Production IIS switched successfully."
 
       - name: Start Production AppPool
@@ -502,7 +506,7 @@ jobs:
           Write-Host "Production health check passed."
 
       - name: Rollback Production
-        if: failure()
+        if: failure() && env.PRODUCTION_SWITCHED == 'true'
         shell: powershell
         run: |
           Import-Module WebAdministration
