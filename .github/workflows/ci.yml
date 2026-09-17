@@ -85,6 +85,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "Build failed! Send notification here."
+  
+  test-output:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.set-version.outputs.version }}
+
+    steps:
+      - name: Set Version
+        id: set-version
+        run: |
+          echo "version=2026.09.17" >> "$GITHUB_OUTPUT"
+
+  test-output-consumer:
+    needs: test-output
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Read Version
+        run: |
+          echo "Received version: ${{ needs.test-output.outputs.version }}"
 
   deploy-staging:
     needs: build
