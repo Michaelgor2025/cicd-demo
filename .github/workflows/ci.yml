@@ -53,6 +53,11 @@ jobs:
       - name: Publish
         run: dotnet publish -c Release -o ./publish
 
+      - name: Set Release ID
+        id: release
+        run: |
+          echo "release_id=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -169,7 +174,7 @@ jobs:
           $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
           $releasesPath = Join-Path $basePath "releases"
 
-          $releaseId = "${{ github.run_number }}"
+          $releaseId = "${{ needs.build.outputs.release_id }}"
           $releasePath = Join-Path $releasesPath $releaseId
 
           Write-Host "Source: $source"
@@ -334,7 +339,9 @@ jobs:
           Write-Host "========================================"
 
   deploy-production:
-    needs: deploy-staging
+    needs:
+      - build
+      - deploy-staging
 
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
