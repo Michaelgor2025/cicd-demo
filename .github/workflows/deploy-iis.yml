@@ -255,7 +255,7 @@ jobs:
 
           $siteName = "${{ inputs.site_name }}"
 
-          $basePath = ${{ vars.DEPLOY_PATH }}
+          $basePath = "${{ vars.DEPLOY_PATH }}"
 
           $releaseId = "${{ inputs.release_id }}"
 
@@ -543,7 +543,7 @@ jobs:
       - name: Cleanup Old Releases
         shell: powershell
         run: |
-          $basePath = ${{ vars.DEPLOY_PATH }}
+          $basePath = "${{ vars.DEPLOY_PATH }}"
 
           $releasesPath = Join-Path `
             $basePath `
