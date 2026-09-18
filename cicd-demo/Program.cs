@@ -20,7 +20,7 @@ app.MapGet("/health", (HttpContext context) =>
 {
     //var port = context.Connection.LocalPort;
 
-    return "Hello from CI/CD - Version 11";
+    return "Hello from CI/CD - Version 12";
 });
 
 app.Run();
