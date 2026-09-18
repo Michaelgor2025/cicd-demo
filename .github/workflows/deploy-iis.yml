@@ -542,6 +542,7 @@ jobs:
       # ============================================================
       - name: Cleanup Old Releases
         shell: powershell
+        if: success()
         run: |
           $basePath = "${{ vars.DEPLOY_PATH }}"
 
@@ -568,6 +569,9 @@ jobs:
           $releases = Get-ChildItem `
             -Path $releasesPath `
             -Directory |
+            Where-Object {
+                $_.Name -match '^\d+$'
+            } |
             Sort-Object {
                 [int64]$_.Name
             } -Descending
