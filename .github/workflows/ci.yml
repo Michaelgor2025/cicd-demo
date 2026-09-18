@@ -61,7 +61,7 @@ jobs:
       - name: Set Release ID
         id: release
         run: |
-          echo "release_id=${{ needs.build.outputs.release_id }}" >> "$GITHUB_OUTPUT"
+          echo "release_id=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -246,7 +246,7 @@ jobs:
           $siteName = "cicd-demo-staging"
 
           $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
-          $releaseId = "${{ github.run_number }}"
+          $releaseId = "${{ needs.build.outputs.release_id }}"
 
           $releasePath = Join-Path `
             $basePath `
@@ -355,7 +355,7 @@ jobs:
           Import-Module WebAdministration
 
           $siteName = "cicd-demo-staging"
-          $releaseId = "${{ github.run_number }}"
+          $releaseId = "${{ needs.build.outputs.release_id }}"
 
           $currentPath = (Get-ItemProperty `
             "IIS:\Sites\$siteName").physicalPath
