@@ -1,53 +1,157 @@
-name: Reusable IIS Deploy
+name: IIS Deploy
 
 on:
+  # ============================================================
+  # Reusable Workflow
+  #
+  # staging / production 都通过 workflow_call 调用这个 Workflow
+  # 不在这里写死任何环境名称、站点名称或部署路径
+  # ============================================================
   workflow_call:
     inputs:
+
+      # GitHub Environment 名称
+      # 例如：staging / production
       environment:
+        description: GitHub Environment name
         required: true
         type: string
 
+      # 本次部署使用的 Release ID
+      # 由 build Job 生成并传递过来
       release_id:
+        description: Release ID
         required: true
         type: string
 
+      # IIS Site 名称
       site_name:
+        description: IIS Site name
         required: true
         type: string
 
+      # IIS AppPool 名称
       app_pool_name:
+        description: IIS AppPool name
         required: true
         type: string
+
+      # 部署根目录
+      #
+      # 例如：
+      # C:\Deploy\cicd-demo-staging
+      # C:\Deploy\cicd-demo-production
+      deploy_path:
+        description: Deployment base path
+        required: true
+        type: string
+
+      # Health Check 地址
+      #
+      # 如果不传或者传空字符串，则跳过 Health Check
+      health_url:
+        description: Health check URL
+        required: false
+        type: string
+        default: ""
+
+      # 是否启用自动 Rollback
+      #
+      # Production：
+      # true
+      #
+      # Staging：
+      # false
+      enable_rollback:
+        description: Enable automatic rollback
+        required: false
+        type: boolean
+        default: false
+
+      # Release 保留数量
+      #
+      # 默认保留最近 3 个 Release
+      keep_releases:
+        description: Number of releases to keep
+        required: false
+        type: number
+        default: 3
+
 
 jobs:
   deploy:
+
+    # ============================================================
+    # 使用 Windows Self-hosted Runner
+    #
+    # 因为后面的部署步骤需要：
+    # - IIS
+    # - WebAdministration
+    # - PowerShell
+    # ============================================================
     runs-on: self-hosted
 
+    # ============================================================
+    # GitHub Environment
+    #
+    # inputs.environment 会决定实际使用：
+    #
+    # staging
+    # production
+    #
+    # Production 如果配置了 Required reviewers，
+    # GitHub 会在这里要求审批。
+    # ============================================================
     environment:
       name: ${{ inputs.environment }}
 
     steps:
-      # 1. 下载 build job 产生的 Artifact
+
+      # ============================================================
+      # 1. 下载 Build Job 生成的 Artifact
+      #
+      # build Job 会先生成：
+      #
+      # cicd-demo
+      #
+      # 这里把 Artifact 下载到：
+      #
+      # ./deploy
+      #
+      # 后面的 Deploy Files 会从这里复制文件。
+      # ============================================================
       - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: cicd-demo
           path: ./deploy
 
-      # 2. 停止 Staging AppPool
-      - name: Stop Staging AppPool
+
+      # ============================================================
+      # 2. 停止 IIS AppPool
+      #
+      # 部署前先停止 AppPool，避免文件正在被应用程序占用。
+      #
+      # 如果 AppPool 本来就是停止状态，则不重复停止。
+      #
+      # 最多等待 30 秒确认 AppPool 已经停止。
+      # ============================================================
+      - name: Stop AppPool
         shell: powershell
         run: |
           Import-Module WebAdministration
 
-          $appPoolName = "cicd-demo-staging"
+          $appPoolName = "${{ inputs.app_pool_name }}"
 
-          $state = (Get-WebAppPoolState -Name $appPoolName).Value
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
 
           if ($state -eq "Started") {
+
               Write-Host "Stopping AppPool: $appPoolName"
 
-              Stop-WebAppPool -Name $appPoolName
+              Stop-WebAppPool `
+                -Name $appPoolName
 
               $timeout = 30
               $elapsed = 0
@@ -56,104 +160,189 @@ jobs:
                   Start-Sleep -Seconds 1
                   $elapsed++
 
-                  $state = (Get-WebAppPoolState -Name $appPoolName).Value
-              } while ($state -ne "Stopped" -and $elapsed -lt $timeout)
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
+
+              } while (
+                  $state -ne "Stopped" `
+                  -and $elapsed -lt $timeout
+              )
 
               if ($state -ne "Stopped") {
-                  throw "AppPool did not stop within $timeout seconds."
+                  throw "AppPool did not stop."
               }
           }
           else {
-              Write-Host "AppPool is already stopped."
+              Write-Host "AppPool already stopped."
           }
 
-      # 3. 创建新的 Release
-      - name: Deploy Staging Files
+
+      # ============================================================
+      # 3. 创建新的 Release 并复制部署文件
+      #
+      # 目录结构：
+      #
+      # deploy_path
+      # └── releases
+      #     ├── 27
+      #     ├── 28
+      #     └── 29   ← 本次部署
+      #
+      # release_id 来自 build Job。
+      #
+      # 同一个 release_id 会被：
+      #
+      # build
+      #   ↓
+      # staging
+      #   ↓
+      # production
+      #
+      # 使用，确保 Production 部署的就是 Staging 验证过的版本。
+      # ============================================================
+      - name: Deploy Files
         shell: powershell
         run: |
-          $source = Join-Path $env:GITHUB_WORKSPACE "deploy"
+          $source = Join-Path `
+            $env:GITHUB_WORKSPACE `
+            "deploy"
 
-          $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
-          $releasesPath = Join-Path $basePath "releases"
+          $basePath = "${{ vars.DEPLOY_PATH }}"
 
-          $releaseId = "${{ needs.build.outputs.release_id }}"
-          $releasePath = Join-Path $releasesPath $releaseId
+          $releasesPath = Join-Path `
+            $basePath `
+            "releases"
 
-          Write-Host "Source: $source"
-          Write-Host "Release: $releasePath"
+          $releaseId = "${{ inputs.release_id }}"
 
+          $releasePath = Join-Path `
+            $releasesPath `
+            $releaseId
+
+          Write-Host "Release ID:"
+          Write-Host $releaseId
+
+          Write-Host "Release Path:"
+          Write-Host $releasePath
+
+          # 创建 Release 目录
           New-Item `
             -ItemType Directory `
             -Path $releasePath `
             -Force | Out-Null
 
+          # 复制 Artifact 文件
           Copy-Item `
             -Path "$source\*" `
             -Destination $releasePath `
             -Recurse `
             -Force
 
-          # 验证 web.config
-          $webConfig = Join-Path $releasePath "web.config"
+          # 基础部署验证：
+          # ASP.NET Core IIS 部署必须存在 web.config
+          $webConfig = Join-Path `
+            $releasePath `
+            "web.config"
 
           if (-not (Test-Path $webConfig)) {
-              throw "web.config not found: $releasePath"
+              throw "web.config not found."
           }
 
-          Write-Host "Staging release validation passed."
+          Write-Host "Release validation passed."
 
-      # 4. 修改 Staging IIS Site 指向新的 Release
-      - name: Switch Staging IIS
+
+      # ============================================================
+      # 4. 切换 IIS 到新的 Release
+      #
+      # 例如：
+      #
+      # 原来：
+      # C:\Deploy\...\releases\28
+      #
+      # 切换成：
+      # C:\Deploy\...\releases\29
+      #
+      # 在切换之前先保存旧路径。
+      #
+      # 如果后面的 Health Check 失败，
+      # Rollback 会使用这个旧路径恢复。
+      # ============================================================
+      - name: Switch IIS
         shell: powershell
         run: |
           Import-Module WebAdministration
 
-          $siteName = "cicd-demo-staging"
+          $siteName = "${{ inputs.site_name }}"
 
-          $basePath = "${{ vars.STAGING_DEPLOY_PATH }}"
-          $releaseId = "${{ needs.build.outputs.release_id }}"
+          $basePath = ${{ vars.DEPLOY_PATH }}
+
+          $releaseId = "${{ inputs.release_id }}"
 
           $releasePath = Join-Path `
             $basePath `
             "releases\$releaseId"
 
-          # 保存旧版本路径
+          # 获取当前 IIS Site 的物理路径
           $oldPath = (Get-ItemProperty `
             "IIS:\Sites\$siteName").physicalPath
 
-          Write-Host "Old IIS path: $oldPath"
-          Write-Host "New IIS path: $releasePath"
+          Write-Host "Old IIS Path:"
+          Write-Host $oldPath
 
-          "OLD_STAGING_RELEASE_PATH=$oldPath" |
+          Write-Host "New IIS Path:"
+          Write-Host $releasePath
+
+          # 保存旧 Release 路径
+          #
+          # 后面的 Rollback Step 可以通过
+          # $env:OLD_RELEASE_PATH 获取。
+          "OLD_RELEASE_PATH=$oldPath" |
             Out-File `
               -FilePath $env:GITHUB_ENV `
               -Append
 
-          # 切换 IIS
+          # 切换 IIS Site 到新 Release
           Set-ItemProperty `
             "IIS:\Sites\$siteName" `
             -Name physicalPath `
             -Value $releasePath
 
-          # 再读一次验证
+          # 再次读取 IIS 路径进行验证
           $currentPath = (Get-ItemProperty `
             "IIS:\Sites\$siteName").physicalPath
 
           if ($currentPath -ne $releasePath) {
-              throw "Staging IIS physical path verification failed."
+              throw "IIS switch failed."
           }
 
-          Write-Host "Staging IIS switch successful."
+          # 标记 IIS 已经成功切换
+          #
+          # Rollback 只有在 IIS 已经成功切换之后才允许执行。
+          "IIS_SWITCHED=true" |
+            Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Append
 
-      # 5. 启动 Staging AppPool
-      - name: Start Staging AppPool
+          Write-Host "IIS switched successfully."
+
+
+      # ============================================================
+      # 5. 启动 IIS AppPool
+      #
+      # IIS 已经切换到新的 Release 后，
+      # 启动 AppPool。
+      #
+      # 最多等待 30 秒确认 AppPool 成功启动。
+      # ============================================================
+      - name: Start AppPool
         shell: powershell
         run: |
           Import-Module WebAdministration
 
-          $appPoolName = "cicd-demo-staging"
+          $appPoolName = "${{ inputs.app_pool_name }}"
 
-          Start-WebAppPool -Name $appPoolName
+          Start-WebAppPool `
+            -Name $appPoolName
 
           $timeout = 30
           $elapsed = 0
@@ -165,30 +354,50 @@ jobs:
               $state = (Get-WebAppPoolState `
                 -Name $appPoolName).Value
 
-          } while ($state -ne "Started" -and $elapsed -lt $timeout)
+          } while (
+              $state -ne "Started" `
+              -and $elapsed -lt $timeout
+          )
 
           if ($state -ne "Started") {
-              throw "Staging AppPool did not start."
+              throw "AppPool did not start."
           }
 
-          Write-Host "Staging AppPool started."
+          Write-Host "AppPool started."
 
-      # 6. Staging 健康检查
-      - name: Staging Health Check
+
+      # ============================================================
+      # 6. Health Check
+      #
+      # 部署完成后检查应用是否真正可以访问。
+      #
+      # 如果没有传 health_url：
+      #
+      # health_url == ""
+      #
+      # 则跳过这个 Step。
+      #
+      # 如果连续 10 次检查都失败，则整个部署失败。
+      # 每次检查间隔 2 秒。
+      # ============================================================
+      - name: Health Check
+        if: inputs.health_url != ''
         shell: powershell
         run: |
-          $url = "${{ vars.STAGING_HEALTH_URL }}"
+          $url = "${{ vars.HEALTH_URL }}"
 
           $maxAttempts = 10
           $attempt = 0
           $success = $false
 
           while ($attempt -lt $maxAttempts) {
+
               $attempt++
 
               Write-Host "Health check attempt: $attempt"
 
               try {
+
                   $response = Invoke-WebRequest `
                     -Uri $url `
                     -UseBasicParsing `
@@ -198,9 +407,11 @@ jobs:
                       $success = $true
                       break
                   }
+
+                  Write-Host "Unexpected status code: $($response.StatusCode)"
               }
               catch {
-                  Write-Host "Health check failed:"
+
                   Write-Host $_.Exception.Message
               }
 
@@ -208,40 +419,274 @@ jobs:
           }
 
           if (-not $success) {
-              throw "Staging health check failed."
+              throw "Health check failed."
           }
 
-          Write-Host "Staging health check passed."
+          Write-Host "Health check passed."
 
-      # 7. 部署结果
-      - name: Staging Deployment Summary
+
+      # ============================================================
+      # 7. 自动 Rollback
+      #
+      # 只有同时满足三个条件才执行：
+      #
+      # ① 前面的步骤发生失败
+      # ② 调用方启用了 enable_rollback
+      # ③ IIS 已经成功切换
+      #
+      # Production：
+      # enable_rollback = true
+      #
+      # Staging：
+      # enable_rollback = false
+      #
+      # 因此同一个 Reusable Workflow 可以支持两种策略。
+      # ============================================================
+      - name: Rollback
+        if: failure() && inputs.enable_rollback && env.IIS_SWITCHED == 'true'
         shell: powershell
         run: |
           Import-Module WebAdministration
 
-          $siteName = "cicd-demo-staging"
-          $releaseId = "${{ needs.build.outputs.release_id }}"
+          $siteName = "${{ inputs.site_name }}"
+          $appPoolName = "${{ inputs.app_pool_name }}"
+          $oldPath = $env:OLD_RELEASE_PATH
 
+          Write-Host "========================================"
+          Write-Host "             IIS Rollback"
+          Write-Host "========================================"
+
+          # 没有旧路径，无法 Rollback
+          if ([string]::IsNullOrWhiteSpace($oldPath)) {
+              Write-Warning "Old release path is empty."
+              Write-Warning "Cannot rollback."
+              exit 0
+          }
+
+          Write-Host "Rollback target:"
+          Write-Host $oldPath
+
+          # 旧 Release 不存在，无法 Rollback
+          if (-not (Test-Path $oldPath)) {
+              Write-Warning "Old release does not exist:"
+              Write-Warning $oldPath
+              exit 0
+          }
+
+          # 获取当前 AppPool 状态
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
+
+          # 如果 AppPool 正在运行，则先停止
+          if ($state -eq "Started") {
+
+              Write-Host "Stopping AppPool..."
+
+              Stop-WebAppPool `
+                -Name $appPoolName
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
+
+              } while (
+                  $state -ne "Stopped" `
+                  -and $elapsed -lt $timeout
+              )
+
+              if ($state -ne "Stopped") {
+                  Write-Warning "AppPool did not stop."
+                  exit 0
+              }
+          }
+
+          # 切回旧 Release
+          Write-Host "Switching IIS back to:"
+          Write-Host $oldPath
+
+          Set-ItemProperty `
+            "IIS:\Sites\$siteName" `
+            -Name physicalPath `
+            -Value $oldPath
+
+          # 验证 Rollback 后 IIS 路径
           $currentPath = (Get-ItemProperty `
             "IIS:\Sites\$siteName").physicalPath
 
-          $appPoolState = (Get-WebAppPoolState `
-            -Name $siteName).Value
+          if ($currentPath -ne $oldPath) {
+              Write-Warning "IIS rollback path verification failed."
+              exit 0
+          }
 
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "       Staging Deployment"
-          Write-Host "========================================"
-          Write-Host "Application : cicd-demo"
-          Write-Host "Environment : Staging"
-          Write-Host "Release     : $releaseId"
-          Write-Host "IIS Path    : $currentPath"
-          Write-Host "AppPool     : $appPoolState"
-          Write-Host "Health      : Passed"
-          Write-Host "========================================"
+          # 启动 AppPool
+          Start-WebAppPool `
+            -Name $appPoolName
 
-      - name: Show Release ID
+          Write-Host "IIS rollback completed."
+
+
+      # ============================================================
+      # 8. 清理旧 Release
+      #
+      # 默认保留最近 3 个 Release。
+      #
+      # 例如当前有：
+      #
+      # 30
+      # 29
+      # 28
+      # 27
+      # 26
+      #
+      # keep_releases = 3
+      #
+      # 最终保留：
+      #
+      # 30
+      # 29
+      # 28
+      #
+      # 删除：
+      #
+      # 27
+      # 26
+      #
+      # Staging / Production 都可以使用。
+      # ============================================================
+      - name: Cleanup Old Releases
         shell: powershell
         run: |
-          Write-Host "Release ID: ${{ needs.build.outputs.release_id }}"
-          Write-Host "GitHub Run Number: ${{ github.run_number }}"
+          $basePath = ${{ vars.DEPLOY_PATH }}
+
+          $releasesPath = Join-Path `
+            $basePath `
+            "releases"
+
+          $keepCount = [int]"${{ inputs.keep_releases }}"
+
+          Write-Host "Releases path:"
+          Write-Host $releasesPath
+
+          Write-Host "Keep releases:"
+          Write-Host $keepCount
+
+          if (-not (Test-Path $releasesPath)) {
+              Write-Host "Releases directory does not exist."
+              exit 0
+          }
+
+          # 获取所有 Release 目录
+          #
+          # Release ID 是数字，因此按照数字倒序排列。
+          $releases = Get-ChildItem `
+            -Path $releasesPath `
+            -Directory |
+            Sort-Object {
+                [int64]$_.Name
+            } -Descending
+
+          Write-Host "Current releases:"
+
+          foreach ($release in $releases) {
+              Write-Host " - $($release.Name)"
+          }
+
+          # 当前 Release 数量没有超过保留数量
+          if ($releases.Count -le $keepCount) {
+              Write-Host "No releases need to be removed."
+              exit 0
+          }
+
+          # 跳过最新的 keepCount 个
+          # 剩下的就是需要删除的旧 Release。
+          $releasesToDelete = $releases |
+            Select-Object -Skip $keepCount
+
+          foreach ($release in $releasesToDelete) {
+
+              Write-Host "Removing old release:"
+              Write-Host $release.FullName
+
+              Remove-Item `
+                -Path $release.FullName `
+                -Recurse `
+                -Force
+          }
+
+          Write-Host "Release cleanup completed."
+
+
+      # ============================================================
+      # 9. 最终确保 AppPool 正常运行
+      #
+      # always() 表示：
+      #
+      # 不管前面的部署成功还是失败，
+      # 这个 Step 都尝试执行。
+      #
+      # 目的：
+      #
+      # 防止部署过程中发生异常，
+      # 最后 AppPool 仍然停在那里。
+      #
+      # 注意：
+      # 如果启动失败，这里只 Warning + exit 0，
+      # 不覆盖前面真正的部署失败原因。
+      # ============================================================
+      - name: Ensure AppPool Running
+        if: always()
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          $appPoolName = "${{ inputs.app_pool_name }}"
+
+          $state = (Get-WebAppPoolState `
+            -Name $appPoolName).Value
+
+          Write-Host "Current AppPool state: $state"
+
+          if ($state -ne "Started") {
+
+              Write-Host "Attempting to start AppPool..."
+
+              try {
+                  Start-WebAppPool `
+                    -Name $appPoolName
+              }
+              catch {
+                  Write-Warning "Failed to start AppPool:"
+                  Write-Warning $_.Exception.Message
+
+                  # 不覆盖原始部署失败
+                  exit 0
+              }
+
+              $timeout = 30
+              $elapsed = 0
+
+              do {
+                  Start-Sleep -Seconds 1
+                  $elapsed++
+
+                  $state = (Get-WebAppPoolState `
+                    -Name $appPoolName).Value
+
+              } while (
+                  $state -ne "Started" `
+                  -and $elapsed -lt $timeout
+              )
+
+              if ($state -ne "Started") {
+                  Write-Warning "AppPool could not be started."
+                  exit 0
+              }
+          }
+
+          Write-Host "AppPool is running."
