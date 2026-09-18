@@ -5,8 +5,10 @@ on:
 
 jobs:
   call-deploy:
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/deploy-iis.yml
 
     with:
       environment: staging
       release_id: "123"
+      site_name: cicd-demo-staging
+      app_pool_name: cicd-demo-staging

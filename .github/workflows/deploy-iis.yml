@@ -1,0 +1,36 @@
+name: Reusable IIS Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+      release_id:
+        required: true
+        type: string
+
+      site_name:
+        required: true
+        type: string
+
+      app_pool_name:
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+      - name: Show Deploy Info
+        shell: powershell
+        run: |
+          Write-Host "Environment: ${{ inputs.environment }}"
+          Write-Host "Release ID: ${{ inputs.release_id }}"
+          Write-Host "Site Name: ${{ inputs.site_name }}"
+          Write-Host "AppPool: ${{ inputs.app_pool_name }}"
