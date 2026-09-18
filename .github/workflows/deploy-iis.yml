@@ -362,7 +362,7 @@ jobs:
       # 每次检查间隔 2 秒。
       # ============================================================
       - name: Health Check
-        if: inputs.health_url != ''
+        if: vars.HEALTH_URL != ''
         shell: powershell
         run: |
           $url = "${{ vars.HEALTH_URL }}"
