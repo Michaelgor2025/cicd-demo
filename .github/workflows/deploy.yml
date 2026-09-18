@@ -1,0 +1,22 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+      release_id:
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show Environment
+        run: |
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Release ID: ${{ inputs.release_id }}"

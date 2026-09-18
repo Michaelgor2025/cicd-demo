@@ -1,0 +1,12 @@
+name: Test Reusable Workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  call-deploy:
+    uses: ./.github/workflows/deploy.yml
+
+    with:
+      environment: staging
+      release_id: "123"
