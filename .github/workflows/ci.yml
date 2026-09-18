@@ -13,6 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,7 +61,7 @@ jobs:
       - name: Set Release ID
         id: release
         run: |
-          echo "release_id=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "release_id=${{ needs.build.outputs.release_id }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -371,6 +374,12 @@ jobs:
           Write-Host "AppPool     : $appPoolState"
           Write-Host "Health      : Passed"
           Write-Host "========================================"
+
+      - name: Show Release ID
+        shell: powershell
+        run: |
+          Write-Host "Release ID: ${{ needs.build.outputs.release_id }}"
+          Write-Host "GitHub Run Number: ${{ github.run_number }}"
 
   deploy-production:
     concurrency:
