@@ -36,25 +36,6 @@ on:
         required: true
         type: string
 
-      # 部署根目录
-      #
-      # 例如：
-      # C:\Deploy\cicd-demo-staging
-      # C:\Deploy\cicd-demo-production
-      deploy_path:
-        description: Deployment base path
-        required: true
-        type: string
-
-      # Health Check 地址
-      #
-      # 如果不传或者传空字符串，则跳过 Health Check
-      health_url:
-        description: Health check URL
-        required: false
-        type: string
-        default: ""
-
       # 是否启用自动 Rollback
       #
       # Production：
