@@ -10,6 +10,11 @@ on:
       - main
 
   workflow_dispatch:
+    inputs:
+      release_id:
+        description: '要部署的 Release ID'
+        required: true
+        type: string
 
 jobs:
   build:
