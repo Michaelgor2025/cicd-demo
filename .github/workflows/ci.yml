@@ -194,3 +194,19 @@ jobs:
       enable_rollback: true
       keep_releases: 3
       
+  deploy-production-manual:
+    if: github.event_name == 'workflow_dispatch'
+
+    concurrency:
+      group: cicd-demo-production
+      cancel-in-progress: false
+
+    uses: ./.github/workflows/deploy-iis.yml
+
+    with:
+      environment: production
+      release_id: ${{ inputs.release_id }}
+      site_name: cicd-demo
+      app_pool_name: cicd-demo
+      enable_rollback: true
+      keep_releases: 3
