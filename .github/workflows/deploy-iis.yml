@@ -578,27 +578,25 @@ jobs:
         if: success()
         run: |
           $basePath = "${{ vars.DEPLOY_PATH }}"
-
-          $releasesPath = Join-Path `
-            $basePath `
-            "releases"
-
-          $keepCount = [int]"${{ inputs.keep_releases }}"
+          $releasesPath = Join-Path $basePath "releases"
+          $keepReleases = [int]${{ inputs.keep_releases }}
+          $currentReleaseId = "${{ inputs.release_id }}"
 
           Write-Host "Releases path:"
           Write-Host $releasesPath
 
           Write-Host "Keep releases:"
-          Write-Host $keepCount
+          Write-Host $keepReleases
+
+          Write-Host "Current release:"
+          Write-Host $currentReleaseId
 
           if (-not (Test-Path $releasesPath)) {
-              Write-Host "Releases directory does not exist."
+              Write-Host "Releases directory does not exist. Skip cleanup."
               exit 0
           }
 
-          # 获取所有 Release 目录
-          #
-          # Release ID 是数字，因此按照数字倒序排列。
+          # 只处理名称为纯数字的 Release 目录
           $releases = Get-ChildItem `
             -Path $releasesPath `
             -Directory |
@@ -609,27 +607,36 @@ jobs:
                 [int64]$_.Name
             } -Descending
 
-          Write-Host "Current releases:"
-
-          foreach ($release in $releases) {
-              Write-Host " - $($release.Name)"
+          Write-Host "Found numeric releases:"
+          $releases | ForEach-Object {
+              Write-Host "  $($_.Name)"
           }
 
-          # 当前 Release 数量没有超过保留数量
-          if ($releases.Count -le $keepCount) {
-              Write-Host "No releases need to be removed."
-              exit 0
+          # 最新的 N 个 Release 保留
+          $releasesToKeep = $releases |
+            Select-Object -First $keepReleases
+
+          # 当前正在运行的 Release 无论新旧，都必须保留
+          $releasesToKeep = @(
+              $releasesToKeep
+              $releases | Where-Object {
+                  $_.Name -eq $currentReleaseId
+              }
+          ) | Sort-Object Name -Unique
+
+          Write-Host "Releases that will be kept:"
+          $releasesToKeep | ForEach-Object {
+              Write-Host "  $($_.Name)"
           }
 
-          # 跳过最新的 keepCount 个
-          # 剩下的就是需要删除的旧 Release。
-          $releasesToDelete = $releases |
-            Select-Object -Skip $keepCount
+          # 删除不需要保留的 Release
+          $releasesToDelete = $releases | Where-Object {
+              $keepNames = $releasesToKeep.Name
+              $_.Name -notin $keepNames
+          }
 
           foreach ($release in $releasesToDelete) {
-
-              Write-Host "Removing old release:"
-              Write-Host $release.FullName
+              Write-Host "Deleting old release: $($release.FullName)"
 
               Remove-Item `
                 -Path $release.FullName `
