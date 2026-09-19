@@ -36,6 +36,11 @@ on:
         required: true
         type: string
 
+      deploy_existing_release:
+        required: false
+        type: boolean
+        default: false
+
       # 是否启用自动 Rollback
       #
       # Production：
@@ -102,6 +107,7 @@ jobs:
       # 后面的 Deploy Files 会从这里复制文件。
       # ============================================================
       - name: Download Artifact
+        if: inputs.deploy_existing_release == false
         uses: actions/download-artifact@v4
         with:
           name: cicd-demo
@@ -182,6 +188,7 @@ jobs:
       # 使用，确保 Production 部署的就是 Staging 验证过的版本。
       # ============================================================
       - name: Deploy Files
+        if: inputs.deploy_existing_release == false
         shell: powershell
         run: |
           $source = Join-Path `
@@ -231,6 +238,32 @@ jobs:
 
           Write-Host "Release validation passed."
 
+      - name: Validate Existing Release
+        if: inputs.deploy_existing_release == true
+        shell: powershell
+        run: |
+          $basePath = "${{ vars.DEPLOY_PATH }}"
+
+          $releasePath = Join-Path `
+            $basePath `
+            "releases\${{ inputs.release_id }}"
+
+          Write-Host "Existing Release Path:"
+          Write-Host $releasePath
+
+          if (-not (Test-Path $releasePath)) {
+              throw "Release does not exist: $releasePath"
+          }
+
+          $webConfig = Join-Path `
+            $releasePath `
+            "web.config"
+
+          if (-not (Test-Path $webConfig)) {
+              throw "web.config not found: $webConfig"
+          }
+
+          Write-Host "Existing release validation passed."
 
       # ============================================================
       # 4. 切换 IIS 到新的 Release
