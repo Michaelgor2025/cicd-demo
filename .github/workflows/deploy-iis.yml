@@ -460,6 +460,10 @@ jobs:
         shell: powershell
         run: |
           Write-Host "========================================"
+          Write-Host "Starting Rollback"
+          Write-Host "========================================"
+
+          Write-Host "========================================"
           Write-Host "SIMULATING ROLLBACK FAILURE"
           Write-Host "========================================"
 
@@ -477,9 +481,7 @@ jobs:
 
           # 没有旧路径，无法 Rollback
           if ([string]::IsNullOrWhiteSpace($oldPath)) {
-              Write-Warning "Old release path is empty."
-              Write-Warning "Cannot rollback."
-              exit 0
+              throw "Rollback failed: Old release path is empty."
           }
 
           Write-Host "Rollback target:"
@@ -487,9 +489,7 @@ jobs:
 
           # 旧 Release 不存在，无法 Rollback
           if (-not (Test-Path $oldPath)) {
-              Write-Warning "Old release does not exist:"
-              Write-Warning $oldPath
-              exit 0
+              throw "Rollback failed: Old release does not exist: $oldPath"
           }
 
           # 获取当前 AppPool 状态
@@ -520,8 +520,7 @@ jobs:
               )
 
               if ($state -ne "Stopped") {
-                  Write-Warning "AppPool did not stop."
-                  exit 0
+                  throw "Rollback failed: AppPool did not stop."
               }
           }
 
@@ -539,8 +538,7 @@ jobs:
             "IIS:\Sites\$siteName").physicalPath
 
           if ($currentPath -ne $oldPath) {
-              Write-Warning "IIS rollback path verification failed."
-              exit 0
+              throw "Rollback failed: IIS rollback path verification failed. Expected: $oldPath, Actual: $currentPath"
           }
 
           # 启动 AppPool
