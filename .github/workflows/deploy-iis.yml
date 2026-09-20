@@ -459,6 +459,12 @@ jobs:
         if: failure() && inputs.enable_rollback && env.IIS_SWITCHED == 'true'
         shell: powershell
         run: |
+          Write-Host "========================================"
+          Write-Host "SIMULATING ROLLBACK FAILURE"
+          Write-Host "========================================"
+
+          throw "SIMULATED ROLLBACK FAILURE"
+
           Import-Module WebAdministration
 
           $siteName = "${{ inputs.site_name }}"

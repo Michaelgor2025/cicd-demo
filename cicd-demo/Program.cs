@@ -21,6 +21,7 @@ app.MapGet("/health", (HttpContext context) =>
     //var port = context.Connection.LocalPort;
 
     return "Hello from CI/CD - Version 13";
+    //throw new Exception("Internal Server Error");
 });
 
 app.Run();
