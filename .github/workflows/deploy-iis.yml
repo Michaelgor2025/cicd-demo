@@ -163,6 +163,12 @@ jobs:
               Write-Host "AppPool already stopped."
           }
 
+      - name: Test Deployment Failure
+        if: inputs.environment == 'staging'
+        shell: powershell
+        run: |
+          Write-Host "故意制造部署失败，用于测试 failure/always 行为"
+          throw "Intentional deployment failure for testing."
 
       # ============================================================
       # 3. 创建新的 Release 并复制部署文件
