@@ -209,7 +209,6 @@ jobs:
       release_id: ${{ inputs.release_id }}
       site_name: cicd-demo
       app_pool_name: cicd-demo
-      health_url: http://localhost:8080/health-test-fail
       deploy_existing_release: true
       enable_rollback: true
       keep_releases: 3
