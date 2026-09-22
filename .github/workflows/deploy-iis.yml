@@ -463,12 +463,6 @@ jobs:
           Write-Host "Starting Rollback"
           Write-Host "========================================"
 
-          Write-Host "========================================"
-          Write-Host "SIMULATING ROLLBACK FAILURE"
-          Write-Host "========================================"
-
-          throw "SIMULATED ROLLBACK FAILURE"
-
           Import-Module WebAdministration
 
           $siteName = "${{ inputs.site_name }}"
