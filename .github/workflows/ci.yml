@@ -65,6 +65,22 @@ jobs:
       - name: Publish
         run: dotnet publish -c Release -o ./publish
 
+      - name: Create Release Manifest
+        shell: bash
+        run: |
+          cat > ./publish/release.json <<EOF
+          {
+            "releaseId": "${{ steps.release.outputs.release_id }}",
+            "commitSha": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "workflowRunId": "${{ github.run_id }}",
+            "createdBy": "${{ github.actor }}",
+            "createdAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          }
+          EOF
+
+          cat ./publish/release.json
+
       - name: Set Release ID
         id: release
         run: |
