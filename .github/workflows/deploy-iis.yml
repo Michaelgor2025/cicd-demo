@@ -162,8 +162,7 @@ jobs:
           else {
               Write-Host "AppPool already stopped."
           }
-
-      # 👇 就放这里
+          
       - name: Show Environment Variables
         shell: powershell
         run: |
@@ -174,8 +173,10 @@ jobs:
 
       - name: Test Environment Secret
         shell: powershell
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
         run: |
-          if ([string]::IsNullOrEmpty("${{ secrets.DEPLOY_TOKEN }}")) {
+          if ([string]::IsNullOrEmpty($env:DEPLOY_TOKEN)) {
             throw "DEPLOY_TOKEN is missing"
           }
 
