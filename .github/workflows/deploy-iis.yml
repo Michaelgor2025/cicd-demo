@@ -172,6 +172,15 @@ jobs:
           Write-Host "DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}"
           Write-Host "HEALTH_URL: ${{ vars.HEALTH_URL }}"
 
+      - name: Test Environment Secret
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrEmpty("${{ secrets.DEPLOY_TOKEN }}")) {
+            throw "DEPLOY_TOKEN is missing"
+          }
+
+          Write-Host "DEPLOY_TOKEN is configured"
+
       # ============================================================
       # 3. 创建新的 Release 并复制部署文件
       #
