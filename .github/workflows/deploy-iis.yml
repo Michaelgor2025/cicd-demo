@@ -264,6 +264,58 @@ jobs:
 
           Write-Host "Existing release validation passed."
 
+
+      
+      # ============================================================
+      # 4. 读取 Release Manifest
+      #
+      # release.json 由 Build Job 生成，
+      # 用来记录这个 Release 对应的 Git / Workflow 信息。
+      # ============================================================
+      - name: Read Release Manifest
+        shell: powershell
+        run: |
+          $basePath = "${{ vars.DEPLOY_PATH }}"
+
+          $releasePath = Join-Path `
+            $basePath `
+            "releases\${{ inputs.release_id }}"
+
+          $manifestPath = Join-Path `
+            $releasePath `
+            "release.json"
+
+          Write-Host "Release Manifest:"
+          Write-Host $manifestPath
+
+          if (-not (Test-Path $manifestPath)) {
+              throw "release.json not found: $manifestPath"
+          }
+
+          $manifest = Get-Content `
+            -Path $manifestPath `
+            -Raw |
+            ConvertFrom-Json
+
+          Write-Host "========================================"
+          Write-Host "Release Information"
+          Write-Host "========================================"
+
+          Write-Host "Release ID:     $($manifest.releaseId)"
+          Write-Host "Commit SHA:     $($manifest.commitSha)"
+          Write-Host "Branch:         $($manifest.branch)"
+          Write-Host "Workflow Run:   $($manifest.workflowRunId)"
+          Write-Host "Created By:     $($manifest.createdBy)"
+          Write-Host "Created At:     $($manifest.createdAt)"
+
+          Write-Host "========================================"
+
+          if ("$($manifest.releaseId)" -ne "${{ inputs.release_id }}") {
+              throw "Release ID mismatch."
+          }
+
+          Write-Host "Release manifest validation passed."
+
       # ============================================================
       # 4. 切换 IIS 到新的 Release
       #
@@ -384,7 +436,7 @@ jobs:
       #
       # 部署完成后检查应用是否真正可以访问。
       #
-      # 如果没有传 health_url：
+      # 如果 GitHub Environment 没有配置 HEALTH_URL，
       #
       # health_url == ""
       #
