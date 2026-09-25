@@ -63,6 +63,14 @@ on:
         type: number
         default: 3
 
+    secrets:
+      DEPLOY_TOKEN:
+        description: Deploy token
+        required: false
+
+      TEST_SECRET:
+        description: Test secret
+        required: false
 
 jobs:
   deploy:

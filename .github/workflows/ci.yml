@@ -94,6 +94,8 @@ jobs:
       enable_rollback: false
       keep_releases: 3
 
+    secrets: inherit
+
   deploy-production:
     needs:
       - build
