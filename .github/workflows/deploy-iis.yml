@@ -163,6 +163,15 @@ jobs:
               Write-Host "AppPool already stopped."
           }
 
+      # 👇 就放这里
+      - name: Show Environment Variables
+        shell: powershell
+        run: |
+          Write-Host "Environment: ${{ inputs.environment }}"
+          Write-Host "APP_ENV: ${{ vars.APP_ENV }}"
+          Write-Host "DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}"
+          Write-Host "HEALTH_URL: ${{ vars.HEALTH_URL }}"
+
       # ============================================================
       # 3. 创建新的 Release 并复制部署文件
       #
@@ -264,13 +273,16 @@ jobs:
 
           Write-Host "Existing release validation passed."
 
-
-      
       # ============================================================
       # 4. 读取 Release Manifest
       #
-      # release.json 由 Build Job 生成，
-      # 用来记录这个 Release 对应的 Git / Workflow 信息。
+      # 自动部署：
+      #   release.json 随 Artifact 一起部署
+      #
+      # 手动重新部署：
+      #   release.json 已经存在于旧 Release 中
+      #
+      # 两种情况都进行验证。
       # ============================================================
       - name: Read Release Manifest
         shell: powershell
